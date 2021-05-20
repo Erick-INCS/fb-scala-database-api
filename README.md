@@ -1,7 +1,7 @@
 # Scala Remote Database API
 
 ### Configure
-You can configure the application sessing the followin eviroment variables:
+You can configure the application setting the followin eviroment variables:
 - `SAPI_DB_USER`
 - `SAPI_DB_PASS`
 - `SAPI_DB_URL`
