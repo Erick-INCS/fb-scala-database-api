@@ -25,23 +25,32 @@ object Main extends App {
 		// read config
 		val conf = Source.fromFile("app.conf").getLines.toArray.map(_.split('='))
 
-		var url = "jdbc:firebirdsql:"
+		var urlPrefix = "jdbc:firebirdsql:"
 		var driver = "org.firebirdsql.jdbc.FBDriver"
-		var username = ""
-		var password = ""
+
+		val uEnv = "SAPI_DB_USER"
+		val pEnv = "SAPI_DB_PASS"
+		val urlEnv = "SAPI_DB_URL"
+
+		var username = sys.env.get(uEnv).getOrElse(null)
+		var password = sys.env.get(pEnv).getOrElse(null)
+		var url = sys.env.get(urlEnv).getOrElse(null)
+
 		var connection:Option[Connection] = None
 
-		for (value <- conf) {
-			if (value(0) == "user") {
-
-				import io.circe.Decoder, io.circe.Encoder, io.circe.generic.semiauto._
-				username = value(1)
-			} else if (value(0) == "password") {
-				password = value(1)
-			} else if (value(0) == "url") {
-				url += value(1)
+		if (username == null || password == null || url == null) {
+			for (value <- conf) {
+				if (value(0) == "user" && username == null) {
+					username = value(1)
+				} else if (value(0) == "password" && password == null) {
+					password = value(1)
+				} else if (value(0) == "url" && url == null) {
+					url = value(1)
+				}
 			}
 		}
+
+		url = urlPrefix + url
 
 		var res = true
 		var strOut:String = "";
