@@ -9,6 +9,8 @@ import io.finch.catsEffect._
 import io.finch.circe._
 import io.circe.generic.auto._
 
+import io.circe.Decoder, io.circe.Encoder, io.circe.generic.semiauto._
+
 import java.sql.{Connection,DriverManager}
 import scala.io.Source
 import java.io._
@@ -31,6 +33,8 @@ object Main extends App {
 
 		for (value <- conf) {
 			if (value(0) == "user") {
+
+				import io.circe.Decoder, io.circe.Encoder, io.circe.generic.semiauto._
 				username = value(1)
 			} else if (value(0) == "password") {
 				password = value(1)
@@ -64,6 +68,7 @@ object Main extends App {
 						strOut = strOut + s",${cValue}"
 					}
 				}
+				
 
 				while (cResult.next()) {
 					strOut += "\n"
@@ -104,14 +109,17 @@ object Main extends App {
 		Ok(System.getProperty("user.dir"))
 	}
 
-	def execSQL: Endpoint[IO, String] = post("sql" :: param("sql")) { sql:String =>
-		val res = exec(sql)
-		Ok(if (res != null) res else sql)
+	case class ISQL(sql: String)
+	implicit val decoder: Decoder[ISQL] = deriveDecoder[ISQL]
+
+	def execSQL: Endpoint[IO, String] = post("sql" :: jsonBody[ISQL]) { inp:ISQL =>
+		val res = exec(inp.sql)
+		Ok(if (res != null) res else inp.sql)
 	}
 
 	def service: Service[Request, Response] = Bootstrap
 		.serve[Text.Plain](healthcheck :+: execSQL)
-		// .serve[Application.Json](hello)
+		//.serve[Application.Json](hello)
 		.toService
 
 	Await.ready(Http.server.serve(":8080", service))
