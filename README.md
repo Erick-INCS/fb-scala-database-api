@@ -13,6 +13,9 @@ password=masterkey
 url=localhost/3050:/firebird/data/testdb.fdb
 ```
 
+Create the output directories `out`, `success` and `errors`:
+`mkdir -p out success errors`
+
 ### Start application
 #### With sbt
 `sbt run`
