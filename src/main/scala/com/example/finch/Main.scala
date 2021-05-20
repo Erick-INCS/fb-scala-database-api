@@ -16,65 +16,103 @@ import java.util.Calendar
 
 object Main extends App {
 
-  case class Message(hello: String)
+	case class Message(hello: String)
 
-  def exec(sql:String) : Boolean = {
+	def exec(sql:String) : String = {
 
-    // read config
-    val conf = Source.fromFile("app.conf").getLines.toArray.map(_.split('='))
+		// read config
+		val conf = Source.fromFile("app.conf").getLines.toArray.map(_.split('='))
 
-    var url = "jdbc:firebirdsql:"
-    var driver = "org.firebirdsql.jdbc.FBDriver"
-    var username = ""
-    var password = ""
-    var connection:Option[Connection] = None
+		var url = "jdbc:firebirdsql:"
+		var driver = "org.firebirdsql.jdbc.FBDriver"
+		var username = ""
+		var password = ""
+		var connection:Option[Connection] = None
 
-    for (value <- conf) {
-        if (value(0) == "user") {
-			username = value(1)
-		} else if (value(0) == "password") {
-			password = value(1)
-		} else if (value(0) == "url") {
-			url += value(1)
+		for (value <- conf) {
+			if (value(0) == "user") {
+				username = value(1)
+			} else if (value(0) == "password") {
+				password = value(1)
+			} else if (value(0) == "url") {
+				url += value(1)
+			}
 		}
-    }
 
-    var res = true
-    try {
-        Class.forName(driver)
-        connection = Some(DriverManager.getConnection(url, username, password))
-        val statement = connection.getOrElse(null).createStatement
-        val rs = statement.execute(sql)
-    } catch {
-        case e: Exception => e.printStackTrace
-        res = false
-    }
-    if (connection.getOrElse(null) != null) connection.getOrElse(null).close
+		var res = true
+		var strOut:String = "";
+		try {
+			Class.forName(driver)
+			connection = Some(DriverManager.getConnection(url, username, password))
+			val statement = connection.getOrElse(null).createStatement
+			var rs = statement.execute(sql)
 
-	val now = Calendar.getInstance()
-	val fileName = s"${now.get(Calendar.YEAR)}-${now.get(Calendar.MONTH)}-${now.get(Calendar.DATE)}_${now.get(Calendar.HOUR)}:${now.get(Calendar.MINUTE)}:${now.get(Calendar.SECOND)}:${now.get(Calendar.MILLISECOND)}.sql"
-	val pw = new PrintWriter(new File((if (res) "success/" else "errors/") + fileName))
-	pw.write(sql)
-	pw.close
-    return res
-  }
+			while (rs) {
+				val cResult = statement.getResultSet
+				val md = cResult.getMetaData()
+				var cols:Array[String] = Array()
 
-  def healthcheck: Endpoint[IO, String] = get(pathEmpty) {
-    Ok(System.getProperty("user.dir"))
-  }
+				if (md.getColumnCount() > 0) {
+					var cValue = md.getColumnLabel(1)
 
-  def execSQL: Endpoint[IO, String] = post("sql" :: param("sql")) { sql:String =>
-    Ok(if (exec(sql)) "Correct." else sql)
-  }
+					strOut = strOut + (if (cValue.contains(",")) "\"" + s"${cValue}" + "\"" else cValue)
+					cols = cols :+ cValue 
 
-  // def hello: Endpoint[IO, Message] = get("hello" :: path[String]) { s: String =>
-  //   Ok(Message(s))
-  // }
+					for (i <- 2 to md.getColumnCount()) {
+						cValue = md.getColumnLabel(i)
+						cols = cols :+ cValue 
+						strOut = strOut + s",${cValue}"
+					}
+				}
 
-  def service: Service[Request, Response] = Bootstrap
-    .serve[Text.Plain](healthcheck :+: execSQL)
-    // .serve[Application.Json](hello)
-    .toService
+				while (cResult.next()) {
+					strOut += "\n"
+					if (cols.length > 0) {
+						strOut += cResult.getNString(cols.head)
+						for (v <- cols.tail) {
+							strOut += "," + cResult.getNString(v)
+						}
+					}
+				}
 
-  Await.ready(Http.server.serve(":8080", service))
+				println(strOut + "\n\n")
+				rs = statement.getMoreResults()
+			}
+
+		} catch {
+			case e: Exception => e.printStackTrace
+			res = false
+		}
+		if (connection.getOrElse(null) != null) connection.getOrElse(null).close
+
+		val now = Calendar.getInstance()
+		val fileName = s"${now.get(Calendar.YEAR)}-${now.get(Calendar.MONTH)}-${now.get(Calendar.DATE)}_${now.get(Calendar.HOUR)}:${now.get(Calendar.MINUTE)}:${now.get(Calendar.SECOND)}:${now.get(Calendar.MILLISECOND)}.sql"
+		val outFileName = s"${now.get(Calendar.YEAR)}-${now.get(Calendar.MONTH)}-${now.get(Calendar.DATE)}_${now.get(Calendar.HOUR)}:${now.get(Calendar.MINUTE)}:${now.get(Calendar.SECOND)}:${now.get(Calendar.MILLISECOND)}.csv"
+		val pw = new PrintWriter(new File((if (res) "success/" else "errors/") + fileName))
+		val outPw = new PrintWriter(new File("out/" + outFileName))
+
+		pw.write(sql)
+		pw.close
+
+		outPw.write(strOut)
+		outPw.close
+
+		return (if (res) strOut else null)
+	}
+
+	def healthcheck: Endpoint[IO, String] = get(pathEmpty) {
+		Ok(System.getProperty("user.dir"))
+	}
+
+	def execSQL: Endpoint[IO, String] = post("sql" :: param("sql")) { sql:String =>
+		val res = exec(sql)
+		Ok(if (res != null) res else sql)
+	}
+
+	def service: Service[Request, Response] = Bootstrap
+		.serve[Text.Plain](healthcheck :+: execSQL)
+		// .serve[Application.Json](hello)
+		.toService
+
+	Await.ready(Http.server.serve(":8080", service))
 }
